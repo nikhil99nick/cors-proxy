@@ -8,51 +8,88 @@ const app = express();
 // Enable CORS for your domain
 app.use(cors({
     origin: 'http://training.pacificescience.com',
-    methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range'],
-    credentials: false,
-    maxAge: 86400 // 24 hours
+    methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
+    allowedHeaders: [
+        'Content-Type',
+        'Accept',
+        'Accept-Encoding',
+        'Accept-Language',
+        'Origin',
+        'Referer',
+        'Sec-Ch-Ua',
+        'Sec-Ch-Ua-Mobile',
+        'Sec-Ch-Ua-Platform',
+        'User-Agent',
+        'Sec-Fetch-Dest',
+        'Sec-Fetch-Mode',
+        'Sec-Fetch-Site'
+    ],
+    exposedHeaders: ['Content-Length', 'Content-Type'],
+    credentials: false
 }));
 
 // Handle preflight requests
 app.options('*', cors());
 
-// Special route to handle HEAD requests for availability checks
-app.head('/publicAPI/v2/timeseries/data/', (req, res) => {
-    console.log('HEAD request received for API availability check');
-    res.status(200).end();
-});
-
-// Health check endpoint for Render
+// Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
-// Proxy for BLS API
-app.use('/', createProxyMiddleware({
+// Proxy middleware configuration
+const proxyOptions = {
     target: 'https://api.bls.gov',
     changeOrigin: true,
     secure: true,
     onProxyReq: (proxyReq, req, res) => {
-        // Add any necessary headers to the proxied request
-        proxyReq.setHeader('Origin', 'https://api.bls.gov');
+        // Copy original headers
+        proxyReq.setHeader('Accept', 'application/json');
+        proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+        proxyReq.setHeader('Accept-Language', 'en-US,en;q=0.9');
+        proxyReq.setHeader('Origin', 'http://training.pacificescience.com');
+        
+        if (req.body) {
+            const bodyData = JSON.stringify(req.body);
+            proxyReq.setHeader('Content-Type', 'application/json');
+            proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+            proxyReq.write(bodyData);
+        }
     },
     onProxyRes: (proxyRes, req, res) => {
-        // Add CORS headers to the proxied response
+        // Set CORS headers
         proxyRes.headers['Access-Control-Allow-Origin'] = 'http://training.pacificescience.com';
-        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, HEAD, PUT, DELETE, PATCH';
-        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Origin, Accept, X-Requested-With';
-        proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Range, X-Content-Range';
-        proxyRes.headers['Access-Control-Max-Age'] = '86400';
+        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, HEAD';
+        proxyRes.headers['Access-Control-Allow-Headers'] = [
+            'Content-Type',
+            'Accept',
+            'Accept-Encoding',
+            'Accept-Language',
+            'Origin',
+            'Referer',
+            'Sec-Ch-Ua',
+            'Sec-Ch-Ua-Mobile',
+            'Sec-Ch-Ua-Platform',
+            'User-Agent',
+            'Sec-Fetch-Dest',
+            'Sec-Fetch-Mode',
+            'Sec-Fetch-Site'
+        ].join(', ');
+        
+        // Remove headers that might cause issues
         delete proxyRes.headers['x-frame-options'];
         delete proxyRes.headers['strict-transport-security'];
     },
     onError: (err, req, res) => {
         console.error('Proxy error:', err);
-        res.status(500).send('Proxy Error');
+        res.status(500).json({
+            error: 'Proxy Error',
+            message: err.message
+        });
     }
-}));
+};
+
+// Apply proxy to all routes
+app.use('/', createProxyMiddleware(proxyOptions));
 
 // Start the server
 const PORT = process.env.PORT || 3000;
