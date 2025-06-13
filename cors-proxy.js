@@ -7,9 +7,12 @@ const app = express();
 
 // Enable CORS for your domain
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGIN || '*', // Replace with your actual domain in Render's environment variables
-    methods: ['GET', 'POST', 'OPTIONS', 'HEAD'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    origin: 'http://training.pacificescience.com',
+    methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    credentials: false,
+    maxAge: 86400 // 24 hours
 }));
 
 // Handle preflight requests
@@ -30,10 +33,20 @@ app.get('/health', (req, res) => {
 app.use('/', createProxyMiddleware({
     target: 'https://api.bls.gov',
     changeOrigin: true,
-    onProxyRes: (proxyRes) => {
-        proxyRes.headers['Access-Control-Allow-Origin'] = process.env.ALLOWED_ORIGIN || '*';
-        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, HEAD';
-        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
+    secure: true,
+    onProxyReq: (proxyReq, req, res) => {
+        // Add any necessary headers to the proxied request
+        proxyReq.setHeader('Origin', 'https://api.bls.gov');
+    },
+    onProxyRes: (proxyRes, req, res) => {
+        // Add CORS headers to the proxied response
+        proxyRes.headers['Access-Control-Allow-Origin'] = 'http://training.pacificescience.com';
+        proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, HEAD, PUT, DELETE, PATCH';
+        proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Origin, Accept, X-Requested-With';
+        proxyRes.headers['Access-Control-Expose-Headers'] = 'Content-Range, X-Content-Range';
+        proxyRes.headers['Access-Control-Max-Age'] = '86400';
+        delete proxyRes.headers['x-frame-options'];
+        delete proxyRes.headers['strict-transport-security'];
     },
     onError: (err, req, res) => {
         console.error('Proxy error:', err);
